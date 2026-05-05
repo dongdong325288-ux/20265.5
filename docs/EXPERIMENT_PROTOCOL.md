@@ -51,3 +51,12 @@ python scripts/idea6_uqp_bagel_eval.py
 python scripts/make_tradeoff_figure.py
 python scripts/make_paper_figures_v2.py
 ```
+
+## Release-Repo Notes
+
+- `scripts/make_tradeoff_figure.py` reads from `results/data/` and writes to `results/figures/`.
+- `scripts/make_paper_figures_v2.py` reads from `results/data/` and `results/figures/`, then rewrites:
+  - `results/figures/tradeoff_summary_v2.{png,pdf}`
+  - `results/figures/generation_oracle_mosaic.png`
+  - `results/figures/understanding_source_grid.png`
+- `scripts/figure4_make_sixth_prompt.py` is a remote rerun helper for the held-out qualitative prompt and assumes access to the original BAGEL environment plus model weights.

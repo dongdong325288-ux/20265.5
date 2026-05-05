@@ -7,9 +7,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 
-ROOT = Path(__file__).resolve().parent
-DATA = ROOT / 'data'
-FIG = ROOT / 'figures'
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+DATA = REPO_ROOT / 'results' / 'data'
+FIG = REPO_ROOT / 'results' / 'figures'
 
 
 def read_csv(path):

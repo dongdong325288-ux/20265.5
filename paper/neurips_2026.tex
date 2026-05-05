@@ -76,7 +76,7 @@ The important shift is that the optimization object is the \emph{whole inference
 \end{figure*}
 
 \subsection{Task-Aware Generation Planning}
-The generation candidate set contains six paths: the $50$-step BAGEL baseline, fast $20$-step and $15$-step schedules, the direct Flash-style cache path, and two Bagel-native schedules introduced in this project, \texttt{uqp\_sched16} and \texttt{uqp\_sched18}. Each candidate yields latency, CLIP, semantic coverage, relation coverage, style coverage, and LPIPS-to-baseline.
+We evaluate six generation paths in total: the $50$-step BAGEL baseline, fast $20$-step and $15$-step schedules, the direct Flash-style cache path, and two Bagel-native schedules introduced in this project, \texttt{uqp\_sched16} and \texttt{uqp\_sched18}. The planner itself selects among the five accelerated candidates, while the $50$-step baseline is kept as a reference for speed and quality comparisons. Each evaluated path yields latency, CLIP, semantic coverage, relation coverage, style coverage, and LPIPS-to-baseline.
 
 We treat CLIP and semantic coverage as hard feasibility filters rather than post-hoc reporting metrics. With margins $(\delta_{clip}, \delta_{sem}) = (0.004, 0.0015)$, the feasible generation set is
 \begin{align}
@@ -91,7 +91,7 @@ The understanding candidate set contains five visual budgets: \texttt{und\_full}
 \Pi_u^{\mathrm{feas}}(x) &= \{\pi\in\Pi_u : Q_u(\pi;x)=1\}, \\
 \pi_u^*(x) &= \arg\min_{\pi\in\Pi_u^{\mathrm{feas}}(x)} C(\pi).
 \end{align}
-On the present ten-item suite, \texttt{und\_micro} remains accuracy-preserving while being the fastest option, revealing large redundant visual computation on the understanding side.
+On the present ten-item suite, \texttt{und\_micro} remains accuracy-preserving while being the fastest option, revealing large redundant visual computation on the understanding side. As in generation, if no candidate budget preserves correctness for a given input, the implementation falls back to the globally fastest candidate budget; this fallback is rarely exercised on the current suite but is part of the actual decision rule.
 
 \subsection{Why the Candidate Space Is Small}
 A natural question is why we do not build a large controller that mixes token pruning, head pruning, layer skipping, caching, and schedule adaptation. Our answer is diagnostic clarity. The claim of this paper is not that BAGEL needs a larger control space. The claim is that it needs a better \emph{decision object}. A small candidate family is enough to test that thesis directly: if the same candidate family contains both catastrophic and deployable fast paths, then the key bottleneck lies in how the system selects among them.

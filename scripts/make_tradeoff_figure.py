@@ -3,9 +3,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-ROOT = Path(__file__).resolve().parent
-DATA = ROOT / "data"
-OUT = ROOT / "figures" / "tradeoff_summary.png"
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+DATA = REPO_ROOT / "results" / "data"
+FIG = REPO_ROOT / "results" / "figures"
+OUT = FIG / "tradeoff_summary.png"
 
 
 def read_csv(path):

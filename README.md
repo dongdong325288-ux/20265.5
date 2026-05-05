@@ -26,10 +26,12 @@ The archived scripts still depend on the original BAGEL codebase and model weigh
 ## Quick Audit Guide
 
 1. Read `docs/FORMULA_CODE_MAP.md`
-2. Read `docs/EXPERIMENT_PROTOCOL.md`
-3. Inspect `scripts/idea6_uqp_bagel_eval.py` and `scripts/idea5_scope_flashu_eval.py`
-4. Check `results/data/`
-5. Run `python scripts/check_paper_numbers.py`
+2. Read `docs/FORMULA_AUDIT_NOTES.md`
+3. Read `docs/TABLE_FIGURE_AUDIT.md`
+4. Read `docs/EXPERIMENT_PROTOCOL.md`
+5. Inspect `scripts/idea6_uqp_bagel_eval.py` and `scripts/idea5_scope_flashu_eval.py`
+6. Check `results/data/` and `results/figures/`
+7. Run `python scripts/check_paper_numbers.py`
 
 ## Included Result Granularity
 
