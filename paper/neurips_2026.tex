@@ -1,0 +1,494 @@
+\documentclass{article}
+\PassOptionsToPackage{numbers,compress}{natbib}
+\usepackage{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{enumitem}
+
+\title{UQP-Bagel: Task-Aware Quality-Constrained Planning for Training-Free Acceleration of Native Unified Models}
+\author{Anonymous Authors \\ Paper ID: TBD}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Native unified multimodal models promise a single backbone for both understanding and generation, but they also inherit the inference cost of both tasks. Flash-Unified recently argued that this setting calls for \emph{training-free, task-aware} acceleration, using mechanisms such as structural pruning, dynamic layer skipping, guidance control, and token pruning. We revisit that thesis on BAGEL and show that direct structure-first transfer is not sufficient: a Flash-style generation shortcut reaches up to $1.415\times$ speedup but collapses prompt-image alignment from a CLIP score of $0.3640$ to roughly $0.19$. We argue that the missing control object is not structure alone, but the \emph{feasible inference path}: the cheapest path that still satisfies task-specific quality requirements. We therefore propose \textbf{UQP-Bagel}, a training-free, task-aware planner that selects generation schedules under CLIP and semantic-coverage constraints and understanding budgets under correctness constraints. On BAGEL, UQP-Bagel improves over our prior deployable Bagel-native baseline, denoted \textbf{SCOPE-FlashU rule}, on both sides of the unified model: generation latency improves from $112.52$s to $108.02$s while CLIP rises from $0.36$ to $0.37$, and understanding latency improves from $0.29$s to $0.22$s while preserving $1.00$ accuracy. The result is a more deployable unified acceleration recipe that preserves the task-aware spirit of Flash-Unified while replacing brittle structure-first shortcuts with quality-constrained path planning.
+\end{abstract}
+
+\section{Introduction}
+Native unified multimodal models aim to support both visual understanding and image generation within a shared backbone. This design is attractive because it reduces system fragmentation, encourages representation sharing, and offers the possibility that one model can amortize computation across tasks. Recent systems such as Show-o, Show-o2, and BAGEL make this promise concrete by demonstrating that one native architecture can cover both understanding and generation behaviors at meaningful scale \citep{showo,showo2,bagel}. At the same time, the design creates a deployment bottleneck: unified models inherit the cost profile of both generation and understanding, and naive inference is often too slow to be practical.
+
+Recent work has started to address this bottleneck directly. Flash-Unified argues that native unified models are not computation-homogeneous: different tasks stress different substructures, so acceleration should be \emph{task-aware} rather than globally uniform \citep{flash}. This position is consistent with broader trends in both diffusion acceleration and visual-token reduction, where path planning, heterogeneous caching, and text-aware pruning have all outperformed one-size-fits-all shortcuts \citep{dpcache,hetcache,fastv,sparsevlm,swiftvlm}. It is also consistent with recent attempts to accelerate unified models directly, including Show-o Turbo, which highlights that unified understanding-and-generation systems need simultaneous efficiency improvements on both sides rather than one-sided optimization \citep{showoturbo}. This framing is compelling, and we take it seriously. However, our experiments on BAGEL reveal a failure mode that a purely structure-first formulation does not fully capture. When we directly transplant a Flash-style generation shortcut into BAGEL, runtime improves substantially, but prompt-image alignment collapses. The transfer preserves the \emph{speed incentive} while violating the \emph{quality requirement}.
+
+This observation sharpens the diagnosis. The central problem in native unified acceleration is not only to identify removable structure. It is to choose, for the current input and task, the \emph{minimum-cost path that remains quality-feasible}. Existing task-aware structural accelerators implicitly assume that once a fast path has been identified, it remains usable when activated. BAGEL shows that this assumption can fail: the cheapest structural shortcut may not be the cheapest \emph{deployable} shortcut.
+
+We therefore propose \textbf{Unified Quality-Constrained Planning (UQP-Bagel)}, a training-free framework that keeps the task-aware spirit of Flash-Unified while shifting the optimization object from structure editing to feasible-path selection. On the generation side, UQP-Bagel evaluates a small family of Bagel-native schedules and retains only those within a specified margin of the best CLIP and semantic-coverage signals. On the understanding side, it searches over visual budgets and selects the smallest one that preserves answer correctness. Generation and understanding thus share one decision principle: spend the minimum computation necessary to satisfy the relevant notion of quality.
+
+Our experiments support three main claims. First, direct Flash-style transfer exposes a real failure mode on BAGEL: generation speed can improve by $1.369\times$--$1.415\times$ while CLIP collapses to around $0.19$. Second, a prior deployable baseline, \textbf{SCOPE-FlashU rule}, already improves usability by combining Flash-inspired task awareness with Bagel-native routing. Third, UQP-Bagel improves further on both sides of the unified model, lifting generation from $1.19\times$ to $1.24\times$ speedup while also improving CLIP, and lifting understanding from $1.94\times$ to $2.37\times$ without losing accuracy. Taken together, these results suggest that for BAGEL, and potentially for other native unified models, the right next step beyond task-aware acceleration is \emph{quality-constrained task-aware planning}.
+
+\paragraph{Contributions.} We make four contributions. (1) We identify a direct-transfer failure mode for Flash-style unified acceleration on BAGEL, where raw speed gains coexist with severe quality collapse. (2) We formulate a different control object, minimum-cost feasible-path selection under task-specific quality constraints. (3) We instantiate this idea in UQP-Bagel, a training-free planner that accelerates both generation and understanding. (4) We provide a paper-ready experimental package with real BAGEL outputs, quantitative comparisons, qualitative figures, and an official NeurIPS-format submission draft.
+
+\section{Related Work}
+\paragraph{Native unified multimodal models.} Native unified multimodal models aim to let one backbone serve both understanding and generation, rather than composing separate perception, language, and diffusion stacks. Show-o established one influential route to this setting by combining autoregressive and diffusion-style behavior in a single transformer \citep{showo}, while Show-o2 scaled the native-unified recipe further with stronger multimodal understanding and generation performance \citep{showo2}. The broader native-unified family now includes systems such as Chameleon, Emu3, and VILA-U, which further demonstrate that one model can support both multimodal understanding and visual generation within a shared architecture \citep{team2024chameleon,wang2024emu3,vila-u}. BAGEL is a second major instance of this native-unified design \citep{bagel}, and Hyper-Bagel shows that once extra training or distillation is allowed, substantial acceleration can be obtained in that regime as well \citep{hyperbagel}. A parallel line assembles understanding and generation by connecting specialized subsystems, as in SEED-X and MetaMorph \citep{seed-x,tong2024metamorph}. Flash-Unified sharpens the deployment question by arguing that unified models should be accelerated in a \emph{task-aware} way rather than through globally uniform compression \citep{flash}. Show-o Turbo similarly argues that unified understanding-and-generation models need acceleration on both sides at once, not merely faster image generation in isolation \citep{showoturbo}. Our work is closest to this line in motivation, but not in control object: we retain task awareness while relocating the final decision from structure activation to feasible-path selection.
+
+\paragraph{Generation-side acceleration and path control.} Training-free acceleration for diffusion and DiT-style generation has evolved from local cache heuristics to increasingly structured control. TeaCache uses timestep-aware cache decisions \citep{teacache}, Pyramid Attention Broadcast reuses attention more efficiently across timesteps \citep{pab}, and DPCache reframes denoising acceleration as path planning rather than isolated skipping decisions \citep{dpcache}. The surrounding design space also includes cache-oriented methods such as DeepCache and FasterCache, transformer-specific acceleration such as $\Delta$-DiT and SpargeAttn, and DiT quantization lines such as ViDiT-Q \citep{ma2024deepcache,lv2024fastercache,chen2024delta,zhang2025spargeattn,zhao2024vidit}. Structured attention methods such as PISA and VMonarch further show that preserving the \emph{right approximation object} is often more important than simply dropping computation \citep{pisa,vmonarch}. HetCache adds another lesson: even cache reuse itself should be heterogeneous across token roles and denoising phases \citep{hetcache}. UQP-Bagel is philosophically closest to DPCache in that both move from local shortcuts toward path-level control, but our setting is broader because the path must be feasible for a native unified model rather than only for a generation backbone.
+
+\paragraph{Understanding-side reduction and selective visual compute.} On the understanding side, a large body of recent work shows that multimodal inference contains substantial visual redundancy. FastV introduced plug-and-play visual-token pruning after multimodal fusion \citep{fastv}; SparseVLM made the pruning policy more text-aware and structured \citep{sparsevlm}; HiPrune argued that hierarchical attention reveals stronger retention cues than flat saliency \citep{hiprune}. More recent work such as SwiftVLM further stresses that early pruning decisions can be too irreversible, motivating re-evaluation or bypass-style control rather than one-shot deletion \citep{swiftvlm}. In parallel, attention-side acceleration for multimodal models is becoming more modality-aware, for example through sparse prefilling in MMInference \citep{li2025mminference}. Similar ideas extend beyond static image VLMs to video and audio-visual settings, for example in DyCoke and FastAV \citep{dycoke,fastav}. Our understanding-side planner inherits the empirical message of this literature, that a large fraction of visual computation is removable, but differs in purpose: we are not searching for the best pruning rule in isolation, but for the smallest budget that remains feasible under a unified-model deployment contract.
+
+\paragraph{From structure-first shortcuts to feasibility-aware control.} Recent critiques of multimodal pruning argue that preserving benchmark accuracy alone can be a misleading success criterion \citep{tokenpruning}. We view this critique as highly relevant to unified acceleration. Flash-Unified shows that task awareness is the right high-level principle \citep{flash}; diffusion acceleration work shows that path-level control often outperforms local heuristics \citep{dpcache,teacache,pab}; multimodal pruning work shows that shallow top-line preservation can hide more brittle behavior \citep{tokenpruning,fastv,sparsevlm}. UQP-Bagel sits at the intersection of these lines. Our thesis is that in native unified models, the missing abstraction is not another shortcut mechanism, but an explicit notion of \emph{quality-feasible path selection}.
+\section{Revisiting Flash-Style Unified Acceleration on BAGEL}
+\subsection{The Direct-Transfer Failure Mode}
+Flash-Unified provides the right high-level question: how should a native unified model spend different amounts of computation on different tasks? But on BAGEL, a naive answer is insufficient. When we directly transplant a Flash-style generation shortcut, the model becomes faster yet markedly less aligned with the prompt. This is not a small calibration error; it is a regime change in usability. The key empirical pattern is that the direct Flash-style cache path reaches $97.73$s and $1.37\times$ speedup, but CLIP falls to $0.19$ and LPIPS drift rises to $0.91$.
+
+This matters because it isolates the bottleneck. If task-aware acceleration were only about identifying removable structure, the direct transfer should remain viable once the right structure is selected. BAGEL shows otherwise: even a seemingly plausible structural shortcut can violate the quality contract so severely that it stops being deployable.
+
+\subsection{What Should Be Transferred}
+Our position is not that Flash-Unified is wrong. Rather, we argue that its strongest transferable idea is the \emph{task-aware principle}, not every specific structural shortcut. On BAGEL, the right way to inherit that principle is to make the task-aware decision at the level of feasible path selection. This means that Flash-style accelerators remain useful, but only as members of a candidate set rather than universally trusted fast paths.
+
+\section{UQP-Bagel}
+\subsection{Unified Quality-Constrained Planning}
+Let $\Pi_g$ denote candidate generation paths and $\Pi_u$ denote candidate understanding paths. Each path $\pi$ has latency cost $C(\pi)$ and a task-dependent quality outcome. UQP-Bagel solves, per input, a minimum-cost feasible-path problem:
+\begin{align}
+\pi_g^*(x_g) &= \arg\min_{\pi\in\Pi_g} C(\pi) \quad \text{s.t.} \quad Q_g(\pi;x_g) \succeq \tau_g(x_g), \\
+\pi_u^*(x_u) &= \arg\min_{\pi\in\Pi_u} C(\pi) \quad \text{s.t.} \quad Q_u(\pi;x_u) \geq \tau_u(x_u).
+\end{align}
+The important shift is that the optimization object is the \emph{whole inference path}, not a token subset, head subset, or layer-skipping pattern viewed in isolation.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/uqp_pipeline_v13.pdf}
+\caption{Method overview of UQP-Bagel. We begin with the direct-transfer failure observed on BAGEL: Flash-style task-aware acceleration can improve speed while leaving the deployable quality regime. UQP-Bagel therefore keeps task-aware shortcuts as candidate mechanisms, but moves the final decision to a shared planner that selects the minimum-cost feasible path under task-specific quality tests. The same control principle is applied to generation through CLIP and semantic-coverage constraints and to understanding through correctness-preserving budget reduction.}
+\label{fig:pipeline}
+\end{figure*}
+
+\subsection{Task-Aware Generation Planning}
+The generation candidate set contains six paths: the $50$-step BAGEL baseline, fast $20$-step and $15$-step schedules, the direct Flash-style cache path, and two Bagel-native schedules introduced in this project, \texttt{uqp\_sched16} and \texttt{uqp\_sched18}. Each candidate yields latency, CLIP, semantic coverage, relation coverage, style coverage, and LPIPS-to-baseline.
+
+We treat CLIP and semantic coverage as hard feasibility filters rather than post-hoc reporting metrics. With margins $(\delta_{clip}, \delta_{sem}) = (0.004, 0.0015)$, the feasible generation set is
+\begin{align}
+\Pi_g^{\mathrm{feas}}(x) = \{\pi\in\Pi_g :\, &Q_{clip}(\pi;x) \geq Q_{clip}^{\max}(x)-\delta_{clip}, \\
+&Q_{sem}(\pi;x) \geq Q_{sem}^{\max}(x)-\delta_{sem}\}.
+\end{align}
+UQP-Bagel then picks the fastest path in $\Pi_g^{\mathrm{feas}}(x)$. If no candidate survives, it falls back to the globally fastest path. In practice, this fallback is rarely needed on the current prompt set.
+
+\subsection{Task-Aware Understanding Planning}
+The understanding candidate set contains five visual budgets: \texttt{und\_full}, \texttt{und\_med}, \texttt{und\_small}, \texttt{und\_tiny}, and \texttt{und\_micro}. These correspond to progressively smaller visual resolution and token budgets. The understanding planner keeps only budgets that preserve exact-match correctness and chooses the cheapest such budget:
+\begin{align}
+\Pi_u^{\mathrm{feas}}(x) &= \{\pi\in\Pi_u : Q_u(\pi;x)=1\}, \\
+\pi_u^*(x) &= \arg\min_{\pi\in\Pi_u^{\mathrm{feas}}(x)} C(\pi).
+\end{align}
+On the present ten-item suite, \texttt{und\_micro} remains accuracy-preserving while being the fastest option, revealing large redundant visual computation on the understanding side.
+
+\subsection{Why the Candidate Space Is Small}
+A natural question is why we do not build a large controller that mixes token pruning, head pruning, layer skipping, caching, and schedule adaptation. Our answer is diagnostic clarity. The claim of this paper is not that BAGEL needs a larger control space. The claim is that it needs a better \emph{decision object}. A small candidate family is enough to test that thesis directly: if the same candidate family contains both catastrophic and deployable fast paths, then the key bottleneck lies in how the system selects among them.
+
+\subsection{Why Planner-Level Unification Is the Right Abstraction}
+One way to read UQP-Bagel is as a factorization of unified acceleration into three distinct roles: \emph{mechanisms}, which actually reduce compute; \emph{feasibility signals}, which determine whether a shortcut remains acceptable; and the \emph{policy}, which chooses among candidate paths. This factorization is useful because it explains why direct transfer can fail even when the shortcut family is sensible. The failure need not mean the mechanism is useless; it may mean the mechanism was activated without the right feasibility test.
+
+Table~\ref{tab:factorization} makes this decomposition explicit. The unification in UQP-Bagel does not come from forcing generation and understanding to share identical low-level shortcuts. Instead, it comes from sharing one planner-level contract: spend the minimum computation needed to remain usable for the current task instance. This is the main conceptual difference between UQP-Bagel and a purely structure-first acceleration framework.
+
+\begin{table}[t]
+\caption{Factorization of unified acceleration in UQP-Bagel. The key design move is to separate shortcut mechanisms from quality signals and from the final control rule that decides which path is usable.}
+\label{tab:factorization}
+\centering
+\small
+\begin{tabular}{p{0.19\linewidth}p{0.27\linewidth}p{0.23\linewidth}p{0.21\linewidth}}
+\toprule
+Role & Generation side & Understanding side & UQP-Bagel decision layer \\
+\midrule
+Mechanism & step reduction, Bagel-native schedules, Flash-style cache path & visual-budget reduction, smaller token/resolution budgets & candidate path family \\
+Feasibility signal & CLIP and semantic coverage & exact-match correctness & task-specific quality contract \\
+Policy & choose the cheapest generation route that remains quality-feasible & choose the smallest budget that remains accuracy-feasible & unified minimum-cost feasible-path selection \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Experimental Setup}
+\paragraph{Model and hardware.} We evaluate on BAGEL-7B-MoT using the official inference stack. All timing numbers are measured on the same remote Linux server with a single NVIDIA RTX PRO 6000 Blackwell Server Edition GPU. Generation and understanding are run sequentially under the same software environment.
+
+\paragraph{Generation suite.} We use five prompts spanning fantasy portraiture, cyberpunk street scenes, winter landscape composition, product photography, and action-centric animal imagery: \texttt{fairy\_cosplayer}, \texttt{cyberpunk\_alley}, \texttt{snow\_cabin}, \texttt{product\_camera}, and \texttt{corgi\_ocean}. We report mean elapsed time, speedup versus the $50$-step baseline, CLIP, semantic coverage, relation coverage, style coverage, and LPIPS-to-baseline.
+
+\paragraph{Understanding suite.} We evaluate ten image-question pairs derived from the same prompt families and report mean elapsed time, speedup versus \texttt{und\_full}, and exact-match accuracy.
+
+\paragraph{Baselines.} We compare against three baselines: (1) the full BAGEL baseline, (2) our prior deployable Bagel-native system \textbf{SCOPE-FlashU rule}, and (3) direct Flash-style transfer, especially \texttt{flashu\_cache15}. This ordering mirrors the paper's story: from original model, to direct transfer, to Bagel-native adaptation, to quality-constrained planning.
+
+\paragraph{Metric roles.} CLIP and semantic coverage are feasibility constraints for generation. Accuracy is the feasibility constraint for understanding. Elapsed time is the optimization target. This separation is central to our story because it distinguishes UQP-Bagel from quality-oblivious acceleration and makes the optimization target explicit: we do not optimize the proxy itself, but the cheapest path that remains proxy-feasible.
+
+\paragraph{Why these metrics are sufficient for this study.} The present paper is not yet a benchmark-saturating evaluation on public suites such as GenEval, MMBench, MMMU, or MME \citep{geneval,mmbench,mmmu,mme}. However, the chosen metrics align with the semantic roles those benchmarks are meant to probe. On the generation side, CLIP and semantic coverage act as prompt-faithfulness constraints; on the understanding side, exact-match correctness acts as the minimal behavioral requirement. This is enough for the paper's current claim, which is comparative and diagnostic: among candidate fast paths on BAGEL, which ones remain deployable under a task-appropriate quality contract?
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/understanding_source_grid.png}
+\caption{Understanding-side evaluation inputs used in the main study. The suite is intentionally small but visually diverse: it contains stylized characters, urban night scenes, winter landscapes, product-centric close-ups, and action-heavy animal scenes. This variety matters because it lets us check whether aggressive visual-budget reduction preserves correctness across different visual regimes rather than only on one narrow prompt family.}
+\label{fig:understanding-suite-main}
+\end{figure*}
+
+\paragraph{Understanding inputs.} Figure~\ref{fig:understanding-suite-main} makes the understanding benchmark more concrete. Although the suite has only ten items, it spans very different visual layouts and semantic burdens: some questions depend on central object recognition, some on spatial layout, and some on style or scene identity. This is useful for our purpose because it stresses whether understanding-side speedups are merely memorizing one image template or are stable across the prompt families used in the generation study.
+
+\section{Results}
+\begin{table}[t]
+\caption{Unified main results on BAGEL. UQP-Bagel improves over the prior deployable baseline \textbf{SCOPE-FlashU rule} on both sides of the unified model while avoiding the severe quality collapse of direct Flash-style transfer.}
+\label{tab:main}
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+\multicolumn{6}{c}{Generation} \\
+\midrule
+Method & Time & Spd. & CLIP & Sem. & LPIPS \\
+\midrule
+50-step baseline & 133.80s & 1.00$\times$ & 0.36 & 0.26 & 0.00 \\
+Flash direct cache15 & 97.73s & 1.37$\times$ & 0.19 & 0.20 & 0.91 \\
+SCOPE-FlashU rule & 112.52s & 1.19$\times$ & 0.36 & 0.26 & 0.36 \\
+UQP-Bagel & 108.02s & 1.24$\times$ & \textbf{0.37} & \textbf{0.26} & 0.54 \\
+\midrule
+\multicolumn{6}{c}{Understanding} \\
+\midrule
+Method & Time & Spd. & Acc. & \multicolumn{2}{c}{Note} \\
+\midrule
+Full budget & 0.52s & 1.00$\times$ & 1.00 & \multicolumn{2}{c}{reference} \\
+SCOPE-FlashU rule & 0.29s & 1.94$\times$ & 1.00 & \multicolumn{2}{c}{prior deployable baseline} \\
+UQP-Bagel & \textbf{0.22s} & \textbf{2.37$\times$} & \textbf{1.00} & \multicolumn{2}{c}{best result} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Main Comparison}
+Table~\ref{tab:main} summarizes the main empirical claim of the paper. Direct Flash-style transfer is the fastest generation option among the compared systems, but it violates the quality contract so strongly that it is not deployable. SCOPE-FlashU rule restores quality while keeping useful speedup, showing that Flash's task-aware principle can be carried over in a Bagel-native way. UQP-Bagel then improves further on both sides of the unified model. Relative to SCOPE-FlashU rule, generation latency improves from $112.52$s to $108.02$s while CLIP rises from $0.36$ to $0.37$, and understanding latency improves from $0.29$s to $0.22$s with accuracy preserved at $1.00$. The key point is not only that UQP-Bagel is faster than a prior deployable baseline, but that it improves speed while staying in the same qualitative regime of usability. Figure~\ref{fig:tradeoff} visualizes this shift directly.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/tradeoff_summary_v2.pdf}
+\caption{Generation speed-quality trade-offs and understanding speedups at fixed accuracy. Direct Flash-style transfer achieves the largest raw generation speedup but falls far outside the deployable quality regime, while UQP-Bagel shifts generation to a better balanced operating point than the prior Bagel-native baseline \textbf{SCOPE-FlashU rule} and improves understanding speed while preserving accuracy.}
+\label{fig:tradeoff}
+\end{figure*}
+
+\begin{table}[t]
+\caption{Mechanism-level ablations. Top: generation path families selected by UQP-Bagel. Bottom: understanding-budget sweep. The planner does not simply choose the globally fastest path; it chooses the cheapest path that remains feasible under the relevant quality test.}
+\label{tab:ablations}
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+\multicolumn{6}{c}{Generation path families selected by UQP-Bagel} \\
+\midrule
+Path family & \# & Time & Spd. & CLIP & Sem. \\
+\midrule
+\texttt{fast\_15\_cfg02} & 1 & 106.15s & 1.24$\times$ & 0.31 & 0.24 \\
+\texttt{uqp\_sched16} & 2 & 107.47s & 1.22$\times$ & \textbf{0.39} & \textbf{0.27} \\
+\texttt{uqp\_sched18} & 2 & 109.52s & \textbf{1.26$\times$} & 0.37 & 0.27 \\
+\midrule
+\multicolumn{6}{c}{Understanding budget sweep} \\
+\midrule
+Budget & \# & Time & Spd. & Acc. & Interpretation \\
+\midrule
+\texttt{und\_full} & 10 & 0.52s & 1.00$\times$ & 1.00 & reference budget \\
+\texttt{und\_med} & 10 & 0.33s & 1.56$\times$ & 1.00 & large redundancy remains \\
+\texttt{und\_small} & 10 & 0.29s & 1.83$\times$ & 1.00 & still accuracy-preserving \\
+\texttt{und\_tiny} & 10 & 0.26s & 2.05$\times$ & 1.00 & near-oracle region \\
+\texttt{und\_micro} & 10 & \textbf{0.22s} & \textbf{2.37$\times$} & \textbf{1.00} & oracle-selected minimum \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Prompt-Conditioned Generation Planning}
+The upper half of Table~\ref{tab:ablations} shows why UQP-Bagel is more than a fixed fast schedule. The planner selects three different path families across five prompts. \texttt{uqp\_sched16} delivers the strongest quality signals, \texttt{uqp\_sched18} provides the best latency-quality compromise on two prompts, and the more aggressive \texttt{fast\_15\_cfg02} is only accepted once. This is exactly the behavior we want from a native unified planner: not one globally fastest schedule, but prompt-conditioned feasible-path selection.
+
+\subsection{Why the Gain Is Not Just Another Handcrafted Schedule}
+An obvious counterargument is that UQP-Bagel may simply be benefiting from the inclusion of two stronger Bagel-native schedules, rather than from a different control abstraction. Our results argue against that reading. If the new schedules alone were the full explanation, the paper would collapse to a model-selection claim: one fixed schedule would dominate and the planner would be incidental. That is not what we observe. First, the planner changes routes across prompts, which means the win is not reducible to one universally preferred schedule. Second, the same candidate family contains both non-deployable and deployable fast paths, most notably the direct Flash-style path versus the UQP-selected paths. This shows that candidate quality varies in a way that must be \emph{selected over}, not merely discovered once. In other words, the new schedules matter, but the more important contribution is the policy that decides when each schedule is still acceptable.
+
+\subsection{Understanding-Side Redundancy Is Large}
+The lower half of Table~\ref{tab:ablations} reveals a second important pattern. On the current ten-item understanding suite, every tested budget from \texttt{und\_full} down to \texttt{und\_micro} preserves accuracy. The implication is that understanding-side redundancy in BAGEL is substantial and, on this benchmark, easier to exploit safely than generation-side redundancy. This result helps explain why UQP-Bagel gains proportionally more on understanding than on generation.
+
+\subsection{What the Asymmetry Between Generation and Understanding Suggests}
+The gap between the two sides is not merely a numerical curiosity. It points to a deeper property of native unified acceleration. Understanding workloads often tolerate aggressive reduction because the required output is comparatively coarse: a correct answer, label, or short explanation can remain stable even when some visual detail is discarded. Generation behaves differently. The output itself is the visual artifact, so small perturbations in the denoising path can surface as noticeable semantic or stylistic drift. This means unified acceleration should not expect one uniform gain profile across tasks. Instead, it should expect a structured asymmetry: understanding may admit larger safe compression regions, while generation requires stricter feasibility control. We view this asymmetry as one of the strongest arguments for planner-level unification. If the two sides naturally expose different safe operating regions, then the unifying element should be the decision principle, not the insistence on identical low-level shortcuts.
+
+\subsection{Why Quality Feasibility Matters Beyond Pruning}
+This asymmetry also helps clarify our broader methodological claim. Recent work on multimodal token pruning warns that benchmark-level success can hide more fragile visual behavior than the headline accuracy suggests \citep{tokenpruning}. Our BAGEL results point to the same lesson from the generation side. The direct Flash-style path is computationally attractive, yet it leaves the deployable region entirely. In other words, the failure mode is not merely over-pruning; it is optimizing the wrong objective. By making feasibility explicit, UQP-Bagel turns acceleration into a constrained routing problem rather than an unconditional pruning problem. That change in objective is what lets the same candidate family contain both unusable and deployment-worthy paths without confusing the two.
+
+\subsection{Why the Negative Transfer Result Is Central Evidence}
+It is tempting to treat the direct Flash-style transfer as an auxiliary failure case and focus only on the positive gains of UQP-Bagel. We think that would understate the paper's main value. The negative result is not an accident around the edges of the study; it is the observation that makes a different control abstraction necessary. Without it, the paper could be read as a straightforward search over several Bagel-native schedules. With it, the paper becomes a diagnosis: some shortcuts are fast yet non-deployable, so a unified accelerator must distinguish speed from usability before selecting a route. In this sense, the failure case plays the same role that a counterexample plays in a theory paper. It exposes the insufficiency of a seemingly plausible formulation and motivates a stricter one.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{figures/generation_oracle_mosaic.png}
+\caption{Selected generation outputs chosen by UQP-Bagel: (a) \texttt{fairy\_cosplayer / uqp\_sched18}, (b) \texttt{cyberpunk\_alley / uqp\_sched16}, (c) \texttt{snow\_cabin / uqp\_sched18}, (d) \texttt{product\_camera / fast\_15\_cfg02}, (e) \texttt{corgi\_ocean / uqp\_sched16}, and (f) the held-out \texttt{tea\_room / uqp\_sched18}. The planner still does not collapse to a single universal schedule: \texttt{uqp\_sched18} appears on fantasy, winter, and held-out interior scenes, \texttt{uqp\_sched16} is selected for the busier cyberpunk and surfing scenes, and \texttt{fast\_15\_cfg02} remains sufficient for the isolated product shot. This qualitative view matches the per-case selection pattern in Table~\ref{tab:ablations}.}
+\label{fig:qualitative}
+\end{figure*}
+
+\subsection{Qualitative Behavior}
+Figure~\ref{fig:qualitative} shows that the planner's prompt-conditioned routing is not only numerically meaningful but also visually plausible. The product-image case accepts a more aggressive fast path, while the fantasy, winter, and held-out interior scenes keep one of the UQP schedules. This is consistent with our diagnosis that the right fast path depends on the quality tolerance of the current input, not just on task identity at a coarse level. Adding the held-out interior example also makes the mosaic a true $3 \times 2$ qualitative figure, which is visually cleaner than the earlier five-image layout and better reflects that the routing rule generalizes beyond the original benchmark prompts.
+
+\subsection{Prompt-Level Route Assignments}
+Table~\ref{tab:prompt-routes} summarizes the selected route for each prompt family. Two patterns stand out. First, the visually busier prompts, such as \texttt{cyberpunk\_alley} and \texttt{corgi\_ocean}, prefer \texttt{uqp\_sched16}, which is slightly slower but more stable on CLIP and semantic coverage. Second, the isolated-object product case can tolerate the more aggressive \texttt{fast\_15\_cfg02} route because its semantics are concentrated on one dominant foreground subject. This per-prompt view is important because it shows that UQP-Bagel is not merely averaging over a small candidate family; it is using the family differently for different semantic regimes.
+
+\begin{table}[t]
+\caption{Prompt-level route assignments selected by UQP-Bagel. The chosen path varies by prompt family, which supports the paper's central claim that native unified-model acceleration is prompt-conditioned rather than well served by one fixed fast path.}
+\label{tab:prompt-routes}
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+Prompt family & Selected route & Qualitative rationale \\
+\midrule
+\texttt{fairy\_cosplayer} & \texttt{uqp\_sched18} & style-heavy portrait, needs texture stability \\
+\texttt{cyberpunk\_alley} & \texttt{uqp\_sched16} & lighting and scene geometry are sensitive \\
+\texttt{snow\_cabin} & \texttt{uqp\_sched18} & global composition matters more than raw speed \\
+\texttt{product\_camera} & \texttt{fast\_15\_cfg02} & isolated foreground object tolerates a faster path \\
+\texttt{corgi\_ocean} & \texttt{uqp\_sched16} & motion plus foreground-background relation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Design Implications for Native Unified Acceleration}
+The BAGEL case study suggests four design lessons for native unified acceleration.
+
+\paragraph{Lesson 1: task awareness transfers, but mechanisms do not transfer verbatim.} Flash-Unified is right to insist that unified models should not spend identical computation on every task \citep{flash}. Our direct-transfer result does not refute that principle. Instead, it shows that the principle and the mechanism must be separated. Task-aware routing is a transferable design idea; a particular cache rule or structure-first shortcut may still fail when moved to BAGEL.
+
+\paragraph{Lesson 2: mechanisms, quality signals, and policies should be decoupled.} Many efficiency papers collapse three roles into one heuristic: the shortcut mechanism itself, the proxy used to estimate damage, and the control rule that decides when the shortcut fires. BAGEL suggests these roles should be factored apart. Flash-style caches, step reduction, and token pruning are \emph{mechanisms}. CLIP, semantic coverage, and exact-match correctness are \emph{feasibility signals}. UQP-Bagel is the \emph{policy} that links them. This factorization is what makes failure analysis clean: if performance degrades, we can ask whether the mechanism is weak, the feasibility test is insufficient, or the policy is miscalibrated.
+
+\paragraph{Lesson 3: the unified part of a unified accelerator should live in the decision rule.} It is tempting to search for one universal shortcut that works equally well for both generation and understanding. Our evidence points elsewhere. Generation and understanding can benefit from different low-level primitives, but the system still becomes unified at the level of the planner: one policy chooses the cheapest path that remains acceptable for the current task instance.
+
+\paragraph{Lesson 4: raw acceleration and deployable acceleration should be reported separately.} The direct Flash-style transfer is an instructive example. If we evaluated only wall-clock speed, it would look highly successful. If we evaluated only final CLIP or only final understanding accuracy after manually discarding clearly broken runs, we would hide the actual deployment problem. Native unified acceleration therefore needs a more careful evaluation grammar: first determine whether a path remains feasible for the current task, then compare costs within the feasible set. This distinction is simple, but it is exactly what lets UQP-Bagel turn a negative transfer result into a constructive design principle.
+
+\paragraph{When planner-level control should matter most.} Our evidence suggests that feasible-path planning becomes especially important in unified models with three properties. The first is \emph{shared but task-sensitive computation}: the same backbone supports both understanding and generation, but the safe compute budget differs sharply across tasks. The second is \emph{nontrivial prompt-conditioned variation}: different inputs expose different quality sensitivities even within the same task family. The third is \emph{shortcut heterogeneity}: the candidate set contains multiple attractive mechanisms, none of which is uniformly dominant. In such settings, a mechanism-first recipe is likely to be brittle because it commits too early to one shortcut family. By contrast, if a model admitted one clearly dominant fast path across tasks and prompts, planner-level control would matter less and a simpler structure-first approach might already be sufficient.
+
+\begin{table}[t]
+\caption{What transfers from Flash-Unified to BAGEL, and what must be adapted. The table summarizes the paper's central design lesson: the task-aware principle transfers, but several structure-first shortcuts become reliable only after they are wrapped inside a feasibility-aware policy.}
+\label{tab:transfer-lessons}
+\centering
+\small
+\begin{tabular}{p{0.23\linewidth}p{0.27\linewidth}p{0.36\linewidth}}
+\toprule
+Flash-style ingredient & Naive transfer outcome on BAGEL & UQP-Bagel adaptation \\
+\midrule
+Task-aware routing & clearly useful & kept as the organizing principle \\
+Generation-side shortcut activation & speed improves but quality may collapse & treat each fast path as a candidate, not a commitment \\
+Understanding-side budget reduction & transfers well on the current suite & aggressively search the smallest accuracy-preserving budget \\
+One global fast path for all prompts & too rigid for native unified behavior & replace with prompt-conditioned feasible-path selection \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A broader implication follows. Once the shortcut family grows richer, as it likely will in larger unified models, the importance of a brittle mechanism-level win decreases and the importance of a robust policy-level win increases. In that sense, UQP-Bagel is less a claim about one special BAGEL trick and more a claim about where the stable research abstraction should live.
+\section{Discussion, Limitations, and Broader Impact}
+\paragraph{Why this is not simply ``Flash-U on BAGEL''.} Flash-Unified's central insight is that unified models require task-aware acceleration \citep{flash}. We agree, and the paper is deliberately written as a continuation of that thesis rather than as an unrelated alternative. The difference is where we place the final control surface. Flash-style structural shortcuts ask which computation to remove. UQP-Bagel asks which full inference path remains acceptable under the present task contract. This distinction matters because BAGEL exposes a regime in which the shortcut is structurally plausible yet deployment-wise unusable.
+
+\paragraph{Why pilot-scale evidence is still meaningful.} The present study is intentionally narrow, but it is not anecdotal. The candidate set contains both catastrophic and deployable fast paths; the understanding side exhibits strong redundancy while the generation side remains much more quality-sensitive; and the planner changes its route across prompt families rather than collapsing to one fixed schedule. These patterns are exactly the kind of evidence needed to justify a change in research abstraction. In other words, the paper's value is not only the absolute speedup numbers, but the sharper diagnosis of what unified acceleration should optimize.
+
+\paragraph{Why BAGEL is still a meaningful unified testbed.} A natural concern is that a BAGEL-focused study may be too narrow to support a general claim about unified acceleration. We think the opposite reading is more appropriate for this stage. BAGEL is valuable precisely because it is a \emph{native} unified model with both understanding and generation active in one deployment stack, yet it is also accessible enough that failure modes can be inspected closely. This combination makes it a good stress test for control abstractions. If a proposed acceleration principle cannot even separate deployable from non-deployable fast paths in a tightly controlled BAGEL setting, then it is unlikely to become more trustworthy merely by scaling to a larger benchmark suite. For that reason, we treat BAGEL not as the final word on unified acceleration, but as a meaningful diagnostic environment in which the correctness of the optimization object can be tested before broader benchmarking.
+
+\paragraph{What would falsify this thesis.} The central claim of UQP-Bagel is not that every unified model needs the same planner, but that for native unified models the right control object is often the feasible path rather than the shortcut mechanism alone. This claim would weaken substantially under either of two empirical outcomes. The first would be if one fixed fast path dominated across prompts and across tasks, making routing unnecessary. The second would be if broader public benchmarks showed that feasibility-aware selection offers no advantage over a simpler structure-first baseline once scale increases. We state these counterfactuals explicitly because they clarify what this paper is and is not trying to prove.
+
+\paragraph{Main limitations.} This draft remains pilot-scale in three ways. First, the generation suite contains five prompts and the understanding suite contains ten items, so the evidence should be read as a careful BAGEL case study rather than a benchmark-saturating evaluation. Second, the planner is oracle-style over a small candidate family rather than a fully online learned controller. Third, we do not provide statistical confidence intervals because the current setup is based on deterministic prompt cases rather than repeated stochastic sweeps. For a camera-ready or journal version, the most important next step is to broaden the benchmark side while preserving the same quality-constrained framing, for example with public understanding suites such as MMBench, MMMU, and MME and generation-oriented text-image alignment benchmarks such as GenEval \citep{mmbench,mmmu,mme,geneval}.
+
+\paragraph{Broader impact.} Positive impacts include lower deployment cost for unified multimodal systems and wider access to generation-and-understanding workloads on limited compute. The main negative impact is that better generation efficiency can also reduce the cost of misuse, including deceptive or harmful image synthesis. We therefore release this project as an inference-control and evaluation package over an existing model family, not as a new model-weight release. The supplemental assets emphasize scripts, aggregated CSVs, and qualitative evidence rather than new trained checkpoints.
+\section{Conclusion}
+We revisited the Flash-style task-aware acceleration story on BAGEL and found that direct structure-first transfer is not enough: speed can improve while prompt faithfulness collapses. This failure mode motivates a different control object, minimum-cost feasible-path selection under task-specific quality constraints. UQP-Bagel implements this idea in a training-free way and improves both generation and understanding over a prior deployable Bagel-native baseline.
+
+The larger message is methodological. For native unified models, the stable unit of progress may not be a single universally trusted shortcut, but a policy that decides which shortcut remains acceptable for the present task instance. That is why we view UQP-Bagel as more than a BAGEL-specific engineering recipe. It is a claim about where the right abstraction should live: not purely in pruning rules, cache rules, or skip rules, but in the quality-constrained planner that governs them.
+
+A natural next step is to replace the current oracle-style planner with a lightweight online predictor and to test the same framing on broader public unified-model benchmarks. If those larger evaluations support the same diagnosis, then quality-constrained planning may become a useful general design principle for efficient native unified models.
+\begin{thebibliography}{34}
+\bibitem[ByteDance-Seed(2025)]{bagel}
+ByteDance-Seed.
+\newblock BAGEL: Bootstrapping agents by generation and exploration learning.
+\newblock \emph{arXiv preprint arXiv:2505.14683}, 2025.
+
+\bibitem[Xie et~al.(2025a)]{showo}
+Jinheng Xie, Weijia Mao, Zechen Bai, David Junhao Zhang, Weihao Wang, Kevin Qinghong Lin, Yuchao Gu, Zhijie Chen, Zhenheng Yang, and Mike Zheng Shou.
+\newblock Show-o: One single transformer to unify multimodal understanding and generation.
+\newblock In \emph{International Conference on Learning Representations (ICLR)}, 2025.
+
+\bibitem[Xie et~al.(2025b)]{showo2}
+Jinheng Xie, Zhenheng Yang, and Mike Zheng Shou.
+\newblock Show-o2: Improved native unified multimodal models.
+\newblock \emph{arXiv preprint arXiv:2506.15564}, 2025.
+
+\bibitem[Xu et~al.(2025)]{showoturbo}
+Chenkai Xu, Xu Wang, Zhenyi Liao, Yishun Li, and collaborators.
+\newblock Show-o Turbo: Towards accelerated unified multimodal understanding and generation.
+\newblock \emph{arXiv preprint arXiv:2502.05415}, 2025.
+
+\bibitem[Ke et~al.(2026)]{flash}
+Junlong Ke, Zichen Wen, Boxue Yang, Yantai Yang, Xuyang Liu, Chenfei Liao, Zhaorun Chen, Shaobo Wang, and Linfeng Zhang.
+\newblock Flash-Unified: A training-free and task-aware acceleration framework for native unified models.
+\newblock \emph{arXiv preprint arXiv:2603.15271}, 2026.
+
+\bibitem[Lu et~al.(2025)]{hyperbagel}
+Yanzuo Lu, Xin Xia, Manlin Zhang, Huafeng Kuang, Jianbin Zheng, Yuxi Ren, and Xuefeng Xiao.
+\newblock Hyper-Bagel: A unified acceleration framework for multimodal understanding and generation.
+\newblock \emph{arXiv preprint arXiv:2509.18824}, 2025.
+
+\bibitem[Liu et~al.(2024)]{teacache}
+Feng Liu, Shiwei Zhang, Xiaofeng Wang, Yujie Wei, Haonan Qiu, Yuzhong Zhao, Yingya Zhang, Qixiang Ye, and Fang Wan.
+\newblock Timestep embedding tells what to cache for video diffusion model.
+\newblock \emph{arXiv preprint arXiv:2411.19108}, 2024.
+
+\bibitem[Cui et~al.(2026)]{dpcache}
+Bowen Cui, Yuanbin Wang, Huajiang Xu, Biaolong Chen, Aixi Zhang, Hao Jiang, Zhengzheng Jin, Xu Liu, and Pipei Huang.
+\newblock Denoising as path planning: Training-free acceleration of diffusion models with DPCache.
+\newblock \emph{arXiv preprint arXiv:2602.22654}, 2026.
+
+\bibitem[Zhao et~al.(2024)]{pab}
+Xuanlei Zhao, Xiaolong Jin, Kai Wang, and Yang You.
+\newblock Real-time video generation with Pyramid Attention Broadcast.
+\newblock \emph{arXiv preprint arXiv:2408.12588}, 2024.
+
+\bibitem[Li et~al.(2026)]{pisa}
+Haopeng Li, Shitong Shao, Wenliang Zhong, Zikai Zhou, Lichen Bai, Hui Xiong, and Zeke Xie.
+\newblock PISA: Piecewise sparse attention is wiser for efficient diffusion transformers.
+\newblock \emph{arXiv preprint arXiv:2602.01077}, 2026.
+
+\bibitem[Liang et~al.(2026)]{vmonarch}
+Cheng Liang, Haoxian Chen, Liang Hou, Qi Fan, Gangshan Wu, Xin Tao, and Limin Wang.
+\newblock VMonarch: Efficient video diffusion transformers with structured attention.
+\newblock \emph{arXiv preprint arXiv:2601.22275}, 2026.
+
+\bibitem[Liu et~al.(2026)]{hetcache}
+Tianyi Liu, Ye Lu, Linfeng Zhang, Chen Cai, Jianjun Gao, Yi Wang, Kim-Hui Yap, and Lap-Pui Chau.
+\newblock Accelerating diffusion-based video editing via heterogeneous caching: Beyond full computing at sampled denoising timestep.
+\newblock \emph{arXiv preprint arXiv:2603.24260}, 2026.
+
+\bibitem[Chen et~al.(2024)]{fastv}
+Liang Chen, Haozhe Zhao, Tianyu Liu, Shuai Bai, Junyang Lin, Chang Zhou, and Baobao Chang.
+\newblock An image is worth 1/2 tokens after layer 2: Plug-and-play inference acceleration for large vision-language models.
+\newblock \emph{arXiv preprint arXiv:2403.06764}, 2024.
+
+\bibitem[Zhang et~al.(2024)]{sparsevlm}
+Yuan Zhang, Chun-Kai Fan, Junpeng Ma, Wenzhao Zheng, Tao Huang, Kuan Cheng, Denis Gudovskiy, Tomoyuki Okuno, Yohei Nakata, Kurt Keutzer, and Shanghang Zhang.
+\newblock SparseVLM: Visual token sparsification for efficient vision-language model inference.
+\newblock \emph{arXiv preprint arXiv:2410.04417}, 2024.
+
+\bibitem[Liu et~al.(2025)]{hiprune}
+Jizhihui Liu, Feiyi Du, Guangdao Zhu, Niu Lian, Jun Li, and Bin Chen.
+\newblock HiPrune: Training-free visual token pruning via hierarchical attention in vision-language models.
+\newblock \emph{arXiv preprint arXiv:2508.00553}, 2025.
+
+\bibitem[Tao et~al.(2024)]{dycoke}
+Keda Tao, Can Qin, Haoxuan You, Yang Sui, and Huan Wang.
+\newblock DyCoke: Dynamic compression of tokens for fast video large language models.
+\newblock \emph{arXiv preprint arXiv:2411.15024}, 2024.
+
+\bibitem[Jung et~al.(2026)]{fastav}
+Chaeyoung Jung, Youngjoon Jang, Seungwoo Lee, and Joon Son Chung.
+\newblock FastAV: Efficient token pruning for audio-visual large language model inference.
+\newblock \emph{arXiv preprint arXiv:2601.13143}, 2026.
+
+\bibitem[Qian et~al.(2026)]{swiftvlm}
+Chen Qian, Xinran Yu, Danyang Li, Guoxuan Chi, Zheng Yang, Qiang Ma, and Xin Miao.
+\newblock SwiftVLM: Efficient vision-language model inference via cross-layer token bypass.
+\newblock \emph{arXiv preprint arXiv:2602.03134}, 2026.
+
+\bibitem[Wen et~al.(2025)]{tokenpruning}
+Zichen Wen, Yifeng Gao, Weijia Li, Conghui He, and Linfeng Zhang.
+\newblock Token pruning in multimodal large language models: Are we solving the right problem?
+\newblock \emph{Findings of the Association for Computational Linguistics: ACL 2025}, 2025.
+
+\bibitem[Chameleon Team(2024)]{team2024chameleon}
+Chameleon Team.
+\newblock Chameleon: Mixed-modal early-fusion foundation models.
+\newblock \emph{arXiv preprint arXiv:2405.09818}, 2024.
+
+\bibitem[Wang et~al.(2024)]{wang2024emu3}
+Xinlong Wang, Xiaosong Zhang, Zhengxiong Luo, Quan Sun, Yufeng Cui, Jinsheng Wang, Fan Zhang, Yueze Wang, Zhen Li, Qiying Yu, and others.
+\newblock Emu3: Next-token prediction is all you need.
+\newblock \emph{arXiv preprint arXiv:2409.18869}, 2024.
+
+\bibitem[Wu et~al.(2024)]{vila-u}
+Yecheng Wu, Zhuoyang Zhang, Junyu Chen, Haotian Tang, Dacheng Li, Yunhao Fang, Ligeng Zhu, Enze Xie, Hongxu Yin, Li Yi, and others.
+\newblock VILA-U: A unified foundation model integrating visual understanding and generation.
+\newblock \emph{arXiv preprint arXiv:2409.04429}, 2024.
+
+\bibitem[Ge et~al.(2024)]{seed-x}
+Yuying Ge, Sijie Zhao, Jinguo Zhu, Yixiao Ge, Kun Yi, Lin Song, Chen Li, Xiaohan Ding, and Ying Shan.
+\newblock SEED-X: Multimodal models with unified multi-granularity comprehension and generation.
+\newblock \emph{arXiv preprint arXiv:2404.14396}, 2024.
+
+\bibitem[Tong et~al.(2024)]{tong2024metamorph}
+Shengbang Tong, David Fan, Jiachen Zhu, Yunyang Xiong, Xinlei Chen, Koustuv Sinha, Michael Rabbat, Yann LeCun, Saining Xie, and Zhuang Liu.
+\newblock MetaMorph: Multimodal understanding and generation via instruction tuning.
+\newblock \emph{arXiv preprint arXiv:2412.14164}, 2024.
+
+\bibitem[Ma et~al.(2024)]{ma2024deepcache}
+Xinyin Ma, Gongfan Fang, and Xinchao Wang.
+\newblock DeepCache: Accelerating diffusion models for free.
+\newblock In \emph{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2024.
+
+\bibitem[Lv et~al.(2024)]{lv2024fastercache}
+Zhengyao Lv, Chenyang Si, Junhao Song, Zhenyu Yang, Yu Qiao, Ziwei Liu, and Kwan-Yee K. Wong.
+\newblock FasterCache: Training-free video diffusion model acceleration with high quality.
+\newblock \emph{arXiv preprint arXiv:2410.19355}, 2024.
+
+\bibitem[Chen et~al.(2024)]{chen2024delta}
+Pengtao Chen, Mingzhu Shen, Peng Ye, Jianjian Cao, Chongjun Tu, Christos-Savvas Bouganis, Yiren Zhao, and Tao Chen.
+\newblock $\Delta$-DiT: A training-free acceleration method tailored for diffusion transformers.
+\newblock \emph{arXiv preprint arXiv:2406.01125}, 2024.
+
+\bibitem[Zhao et~al.(2024)]{zhao2024vidit}
+Tianchen Zhao, Tongcheng Fang, Enshu Liu, Wan Rui, Widyadewi Soedarmadji, Shiyao Li, Zinan Lin, Guohao Dai, Shengen Yan, Huazhong Yang, and others.
+\newblock ViDiT-Q: Efficient and accurate quantization of diffusion transformers for image and video generation.
+\newblock \emph{arXiv preprint arXiv:2406.02540}, 2024.
+
+\bibitem[Zhang et~al.(2025)]{zhang2025spargeattn}
+Jintao Zhang, Chendong Xiang, Haofeng Huang, Jia Wei, Haocheng Xi, Jun Zhu, and Jianfei Chen.
+\newblock SpargeAttn: Accurate sparse attention accelerating any model inference.
+\newblock \emph{arXiv preprint arXiv:2502.18137}, 2025.
+
+\bibitem[Li et~al.(2025)]{li2025mminference}
+Yucheng Li, Huiqiang Jiang, Chengruidong Zhang, Qianhui Wu, Xufang Luo, Surin Ahn, Amir H. Abdi, Dongsheng Li, Jianfeng Gao, Yuqing Yang, and others.
+\newblock MMInference: Accelerating pre-filling for long-context VLMs via modality-aware permutation sparse attention.
+\newblock \emph{arXiv preprint arXiv:2504.16083}, 2025.
+
+\bibitem[Liu et~al.(2024)]{mmbench}
+Yuan Liu, Haodong Duan, Yuanhan Zhang, Bo Li, Songyang Zhang, Wangbo Zhao, Yike Yuan, Jiaqi Wang, Conghui He, Ziwei Liu, and others.
+\newblock MMBench: Is your multi-modal model an all-around player?
+\newblock In \emph{European Conference on Computer Vision (ECCV)}, 2024.
+
+\bibitem[Yue et~al.(2024)]{mmmu}
+Xiang Yue, Yuansheng Ni, Tianyu Zheng, Kai Zhang, Ruoqi Liu, Ge Zhang, Samuel Stevens, Dongfu Jiang, Weiming Ren, Yuxuan Sun, Cong Wei, Botao Yu, Ruibin Yuan, Renliang Sun, Ming Yin, Boyuan Zheng, Zhenzhu Yang, Yibo Liu, Wenhao Huang, Huan Sun, Yu Su, and Wenhu Chen.
+\newblock MMMU: A massive multi-discipline multimodal understanding and reasoning benchmark for expert AGI.
+\newblock In \emph{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2024.
+
+\bibitem[Fu et~al.(2023)]{mme}
+Chaoyou Fu, Peixian Chen, Yunhang Shen, Yulei Qin, Mengdan Zhang, Xu Lin, Zhenyu Qiu, Wei Lin, Jinrui Yang, Xiawu Zheng, Ke Li, Xing Sun, and Rongrong Ji.
+\newblock MME: A comprehensive evaluation benchmark for multimodal large language models.
+\newblock \emph{arXiv preprint arXiv:2306.13394}, 2023.
+
+\bibitem[Ghosh et~al.(2023)]{geneval}
+Dhruba Ghosh, Hannaneh Hajishirzi, and Ludwig Schmidt.
+\newblock GenEval: An object-focused framework for evaluating text-to-image alignment.
+\newblock In \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2023.
+\end{thebibliography}
+
+\appendix
+\section{Implementation and Reproducibility Notes}
+UQP-Bagel reuses the official BAGEL inference stack and adds two Bagel-native generation schedules, \texttt{uqp\_sched16} and \texttt{uqp\_sched18}, plus two smaller understanding budgets, \texttt{und\_tiny} and \texttt{und\_micro}. Our submission package includes the exact aggregated CSV files used to populate Tables~\ref{tab:main} and \ref{tab:ablations}, along with the qualitative contact sheet in Figure~\ref{fig:qualitative}. The current paper does not release model weights; it studies training-free inference control over an existing model release.
+
+\section{Prompt Suite}
+The five generation prompts are: \texttt{fairy\_cosplayer}, \texttt{cyberpunk\_alley}, \texttt{snow\_cabin}, \texttt{product\_camera}, and \texttt{corgi\_ocean}. The understanding suite contains ten paired image-question items derived from the same prompt families.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/understanding_source_grid.png}
+\caption{Source images used in the understanding-side evaluation suite. The current understanding benchmark is intentionally small and is meant to expose redundancy trends rather than to exhaust a public benchmark.}
+\label{fig:understanding-suite}
+\end{figure*}
+
+\input{checklist.tex}
+\end{document}
+

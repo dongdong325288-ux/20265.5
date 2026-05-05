@@ -1,0 +1,2 @@
+policy_case,num_items,mean_elapsed_s,mean_speedup_vs_baseline,mean_accuracy,mean_clip_score,mean_semantic_coverage,mean_relation_coverage,mean_style_coverage,mean_lpips_to_baseline
+und_micro,10,0.2195,2.3506,1.0,,,,,

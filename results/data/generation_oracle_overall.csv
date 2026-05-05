@@ -1,0 +1,2 @@
+policy,num_items,mean_elapsed_s,mean_speedup_vs_baseline,mean_accuracy,mean_clip_score,mean_semantic_coverage,mean_relation_coverage,mean_style_coverage,mean_lpips_to_baseline
+uqp_oracle,5,108.0236,1.2386,,0.366044,0.262747,0.281582,0.249209,0.539188

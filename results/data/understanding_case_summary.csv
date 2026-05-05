@@ -1,0 +1,6 @@
+case,num_items,mean_elapsed_s,mean_speedup_vs_baseline,mean_accuracy,mean_clip_score,mean_semantic_coverage,mean_relation_coverage,mean_style_coverage,mean_lpips_to_baseline
+und_full,10,0.5191,1.0,1.0,,,,,
+und_med,10,0.3332,1.5626,1.0,,,,,
+und_micro,10,0.2221,2.3697,1.0,,,,,
+und_small,10,0.2856,1.8289,1.0,,,,,
+und_tiny,10,0.2553,2.0496,1.0,,,,,

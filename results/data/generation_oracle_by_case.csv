@@ -1,0 +1,4 @@
+policy_case,num_items,mean_elapsed_s,mean_speedup_vs_baseline,mean_accuracy,mean_clip_score,mean_semantic_coverage,mean_relation_coverage,mean_style_coverage,mean_lpips_to_baseline
+fast_15_cfg02,1,106.1515,1.2415,,0.313631,0.238651,0.249899,,0.232593
+uqp_sched16,2,107.468,1.2182,,0.391383,0.269685,0.301046,0.230874,0.672859
+uqp_sched18,2,109.5153,1.2575,,0.366911,0.267856,0.277959,0.258377,0.558814

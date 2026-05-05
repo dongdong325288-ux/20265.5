@@ -1,0 +1,10 @@
+{
+  "prompt_id": "tea_room",
+  "prompt": "A serene Japanese tea room interior at sunrise, tatami mats, paper shoji windows, a ceramic teapot on a low wooden table, warm wood textures, soft volumetric light, interior photography, ultra detailed.",
+  "selected_case": "uqp_sched18",
+  "selected_image": "/root/autodl-tmp/idea6_20260502_OfficialNeurIPS_FlashStory/heldout_qual/tea_room/tea_room__uqp_sched18.png",
+  "clip_score": 0.405226,
+  "semantic_coverage": 0.2794089503586292,
+  "speedup_vs_baseline": 1.6584,
+  "elapsed_s": 36.2379
+}

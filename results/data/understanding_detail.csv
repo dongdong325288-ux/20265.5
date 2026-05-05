@@ -1,0 +1,51 @@
+case,prompt_id,question,answer,accepted,correct,elapsed_s,speedup_vs_baseline
+und_full,fairy_cosplayer,"Answer with one option only: Which is shown, fairy_elf or corgi?",fairy_elf,fairy|elf|fairy_elf,1,0.6668,1.0
+und_full,fairy_cosplayer,"Answer with one word only: What outfit color is highlighted, green or red?",Green.,green|emerald,1,0.5018,1.0
+und_full,cyberpunk_alley,Answer with one word only: Is it day or night?,Night,night,1,0.4654,1.0
+und_full,cyberpunk_alley,Answer with one word only: Is the pavement wet or dry?,Wet,wet,1,0.4992,1.0
+und_full,snow_cabin,Answer with one word only: Is the building a cabin or a castle?,Cabin,cabin,1,0.4971,1.0
+und_full,snow_cabin,Answer with one word only: Is the season winter or summer?,Winter.,winter|snow,1,0.4974,1.0
+und_full,product_camera,Answer with one word only: Is the main object a camera or a bicycle?,Camera,camera,1,0.4638,1.0
+und_full,product_camera,Answer with one word only: Is this studio or outdoors?,Studio,studio,1,0.4643,1.0
+und_full,corgi_ocean,Answer with one word only: Is the animal a corgi or a cat?,Corgi,corgi|dog,1,0.5287,1.0
+und_full,corgi_ocean,Answer with one word only: Is it surfing or sleeping?,Surfing,surfing|surf,1,0.5283,1.0
+und_med,fairy_cosplayer,"Answer with one option only: Which is shown, fairy_elf or corgi?",fairy_elf,fairy|elf|fairy_elf,1,0.3925,1.6989
+und_med,fairy_cosplayer,"Answer with one word only: What outfit color is highlighted, green or red?",Green.,green|emerald,1,0.3244,1.5469
+und_med,cyberpunk_alley,Answer with one word only: Is it day or night?,Night,night,1,0.2938,1.5841
+und_med,cyberpunk_alley,Answer with one word only: Is the pavement wet or dry?,Wet,wet,1,0.3242,1.5398
+und_med,snow_cabin,Answer with one word only: Is the building a cabin or a castle?,Cabin,cabin,1,0.3248,1.5305
+und_med,snow_cabin,Answer with one word only: Is the season winter or summer?,Winter,winter|snow,1,0.2931,1.697
+und_med,product_camera,Answer with one word only: Is the main object a camera or a bicycle?,Camera,camera,1,0.293,1.5829
+und_med,product_camera,Answer with one word only: Is this studio or outdoors?,Studio,studio,1,0.2923,1.5884
+und_med,corgi_ocean,Answer with one word only: Is the animal a corgi or a cat?,Corgi,corgi|dog,1,0.3561,1.4847
+und_med,corgi_ocean,Answer with one word only: Is it surfing or sleeping?,Surfing,surfing|surf,1,0.3556,1.4857
+und_small,fairy_cosplayer,"Answer with one option only: Which is shown, fairy_elf or corgi?",fairy_elf,fairy|elf|fairy_elf,1,0.3468,1.9227
+und_small,fairy_cosplayer,"Answer with one word only: What outfit color is highlighted, green or red?",Green,green|emerald,1,0.2528,1.985
+und_small,cyberpunk_alley,Answer with one word only: Is it day or night?,Night,night,1,0.2517,1.849
+und_small,cyberpunk_alley,Answer with one word only: Is the pavement wet or dry?,Wet,wet,1,0.2835,1.7608
+und_small,snow_cabin,Answer with one word only: Is the building a cabin or a castle?,Cabin,cabin,1,0.284,1.7504
+und_small,snow_cabin,Answer with one word only: Is the season winter or summer?,Winter,winter|snow,1,0.2518,1.9754
+und_small,product_camera,Answer with one word only: Is the main object a camera or a bicycle?,Camera,camera,1,0.253,1.8332
+und_small,product_camera,Answer with one word only: Is this studio or outdoors?,Studio,studio,1,0.2516,1.8454
+und_small,corgi_ocean,Answer with one word only: Is the animal a corgi or a cat?,Corgi,corgi|dog,1,0.3153,1.6768
+und_small,corgi_ocean,Answer with one word only: Is it surfing or sleeping?,Surfing,surfing|surf,1,0.3148,1.6782
+und_tiny,fairy_cosplayer,"Answer with one option only: Which is shown, fairy_elf or corgi?",fairy_elf,fairy|elf|fairy_elf,1,0.3237,2.0599
+und_tiny,fairy_cosplayer,"Answer with one word only: What outfit color is highlighted, green or red?",Green.,green|emerald,1,0.2523,1.9889
+und_tiny,cyberpunk_alley,Answer with one word only: Is it day or night?,Night,night,1,0.219,2.1251
+und_tiny,cyberpunk_alley,Answer with one word only: Is the pavement wet or dry?,Wet,wet,1,0.2516,1.9841
+und_tiny,snow_cabin,Answer with one word only: Is the building a cabin or a castle?,Cabin,cabin,1,0.2525,1.9687
+und_tiny,snow_cabin,Answer with one word only: Is the season winter or summer?,Winter,winter|snow,1,0.22,2.2609
+und_tiny,product_camera,Answer with one word only: Is the main object a camera or a bicycle?,Camera,camera,1,0.2201,2.1072
+und_tiny,product_camera,Answer with one word only: Is this studio or outdoors?,Studio,studio,1,0.2205,2.1057
+und_tiny,corgi_ocean,Answer with one word only: Is the animal a corgi or a cat?,Corgi,corgi|dog,1,0.2826,1.8708
+und_tiny,corgi_ocean,Answer with one word only: Is it surfing or sleeping?,Surfing,surfing|surf,1,0.2814,1.8774
+und_micro,fairy_cosplayer,"Answer with one option only: Which is shown, fairy_elf or corgi?",fairy_elf,fairy|elf|fairy_elf,1,0.2915,2.2875
+und_micro,fairy_cosplayer,"Answer with one word only: What outfit color is highlighted, green or red?",Green,green|emerald,1,0.1918,2.6163
+und_micro,cyberpunk_alley,Answer with one word only: Is it day or night?,Night,night,1,0.1893,2.4585
+und_micro,cyberpunk_alley,Answer with one word only: Is the pavement wet or dry?,Wet,wet,1,0.2215,2.2537
+und_micro,snow_cabin,Answer with one word only: Is the building a cabin or a castle?,Cabin,cabin,1,0.2223,2.2362
+und_micro,snow_cabin,Answer with one word only: Is the season winter or summer?,Winter,winter|snow,1,0.1904,2.6124
+und_micro,product_camera,Answer with one word only: Is the main object a camera or a bicycle?,Camera,camera,1,0.1916,2.4207
+und_micro,product_camera,Answer with one word only: Is this studio or outdoors?,Studio,studio,1,0.1896,2.4488
+und_micro,corgi_ocean,Answer with one word only: Is the animal a corgi or a cat?,Corgi,corgi|dog,1,0.2543,2.079
+und_micro,corgi_ocean,Answer with one word only: Is it surfing or sleeping?,Surfing,surfing|surf,1,0.2524,2.0931
