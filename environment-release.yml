@@ -1,0 +1,11 @@
+name: uqp-bagel-release
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy>=1.24
+  - pillow>=10.0
+  - matplotlib>=3.8
+  - pip:
+      - tqdm>=4.66

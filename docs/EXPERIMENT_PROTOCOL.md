@@ -60,3 +60,10 @@ python scripts/make_paper_figures_v2.py
   - `results/figures/generation_oracle_mosaic.png`
   - `results/figures/understanding_source_grid.png`
 - `scripts/figure4_make_sixth_prompt.py` is a remote rerun helper for the held-out qualitative prompt and assumes access to the original BAGEL environment plus model weights.
+
+
+## Dependency Presets
+
+- `requirements-release.txt` and `environment-release.yml` are enough for release-level auditing and figure regeneration.
+- `requirements-full-rerun.txt` is closer to what the archived scripts need, but full reruns still assume access to the original BAGEL codebase and model weights.
+- For Windows users who only want to verify numbers and regenerate paper assets, `scripts/reproduce_release_checks.ps1` is the shortest path.

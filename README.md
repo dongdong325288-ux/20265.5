@@ -14,6 +14,7 @@ This release is organized to make four questions easy to answer:
 2. Which CSV files back each table and figure?
 3. Do the paper equations match the actual selection logic in code?
 4. Can the figure-generation and paper-number checks be rerun from this release package?
+5. Which dependency set is sufficient for lightweight audit versus full BAGEL reruns?
 
 ## Start Here
 
@@ -23,9 +24,10 @@ If you are reviewing the paper or checking formulas, this is the fastest path:
 2. Read `docs/FORMULA_AUDIT_NOTES.md`
 3. Read `docs/TABLE_FIGURE_AUDIT.md`
 4. Read `docs/EXPERIMENT_PROTOCOL.md`
-5. Inspect `paper/neurips_2026.tex`
-6. Inspect `scripts/idea6_uqp_bagel_eval.py`
-7. Run `python scripts/check_paper_numbers.py`
+5. Read `docs/FORMULA_WALKTHROUGH.md`
+6. Inspect `paper/neurips_2026.tex`
+7. Inspect `scripts/idea6_uqp_bagel_eval.py`
+8. Run `python scripts/check_paper_numbers.py` or `scripts/reproduce_release_checks.ps1`
 
 ## Repository Layout
 
@@ -45,6 +47,7 @@ If you are reviewing the paper or checking formulas, this is the fastest path:
   - qualitative images and held-out prompt result
 - `docs/`
   - formula/code mapping
+  - formula walkthrough
   - formula audit
   - table/figure audit
   - experiment protocol
@@ -60,6 +63,7 @@ If you are reviewing the paper or checking formulas, this is the fastest path:
 
 ### Formula and audit notes
 - `docs/FORMULA_CODE_MAP.md`
+- `docs/FORMULA_WALKTHROUGH.md`
 - `docs/FORMULA_AUDIT_NOTES.md`
 - `docs/TABLE_FIGURE_AUDIT.md`
 
@@ -91,6 +95,11 @@ python scripts/make_tradeoff_figure.py
 python scripts/make_paper_figures_v2.py
 ```
 
+Or use the helper scripts:
+
+- Windows PowerShell: `scripts/reproduce_release_checks.ps1`
+- Linux/macOS shell: `scripts/reproduce_release_checks.sh`
+
 ## What Still Depends on the Original BAGEL Environment
 
 This repository is a paper release, not a full standalone fork of BAGEL.
@@ -101,6 +110,12 @@ Full GPU reruns of generation and understanding still depend on:
 - the runtime environment used for the archived experiments
 
 See `docs/EXPERIMENT_PROTOCOL.md` and `scripts/run_release_linux.sh` for the expected environment variables and rerun flow.
+
+## Dependency Files
+
+- `requirements-release.txt`: minimal dependencies for audit, figure regeneration, and paper-number checking
+- `environment-release.yml`: conda environment for the lightweight release checks
+- `requirements-full-rerun.txt`: stronger dependency set for BAGEL-side reruns on top of the original BAGEL environment
 
 ## Full Rerun Prerequisites
 
